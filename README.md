@@ -16,7 +16,19 @@ The PR skills need the [`gh`](https://cli.github.com/) CLI, signed in.
 
 ### Install
 
-Symlink the skills you want into your agent's skills folder:
+The recommended way is the [`skills`](https://github.com/vercel-labs/skills) CLI. It asks which agents to install for:
+
+```bash
+# All skills
+npx skills@latest add quinsberry/qstack
+
+# Or only the ones you want
+npx skills@latest add quinsberry/qstack --skill review-pr --skill address-pr-comments
+```
+
+This copies the skills, so run it again to get updates.
+
+To stay in sync with the repo instead, symlink the skills into your agent's skills folder and update with `git pull`:
 
 ```bash
 git clone <this-repo> ~/qstack
