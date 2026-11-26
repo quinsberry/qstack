@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Fuzzy-pick a saved project and open it in Zed.
+# Projects file uses the VS Code Project Manager format (name, rootPath, tags).
+set -euo pipefail
+
+FILE="${ZP_PROJECTS:-$HOME/.config/zed/projects.json}"
+ZED="$(command -v zed || echo /Applications/Zed.app/Contents/MacOS/cli)"
+
+# zp --edit: open the projects file in the current Zed window
+if [ "${1:-}" = "--edit" ]; then
+  [ -e "$FILE" ] || echo '[]' > "$FILE"
+  exec "$ZED" --add "$FILE"
+fi
+
+command -v fzf >/dev/null || { echo "fzf not found. Install it: brew install fzf"; exit 1; }
+command -v jq  >/dev/null || { echo "jq not found. Install it: brew install jq"; exit 1; }
+[ -s "$FILE" ] || { echo "No projects in $FILE. Save one with zp-save."; exit 1; }
+
+# one line per project: "name  [tags]<TAB>path"
+selected="$(
+  jq -r '
+    .[] | select(.enabled != false)
+    | [ .name,
+        ((.tags // []) | map(select(. != "without-category")) | join(",")),
+        .rootPath ]
+    | @tsv' "$FILE" \
+  | sort -f \
+  | awk -F'\t' '{ tag = ($2 == "") ? "" : "[" $2 "]"; printf "%-45s %-28s\t%s\n", $1, tag, $3 }' \
+  | fzf --delimiter='\t' --prompt='project> ' --height=100% --reverse \
+        --header='enter: open in Zed   esc: cancel' || true
+)"
+
+[ -n "$selected" ] || exit 0   # cancelled
+
+path="$(printf '%s' "$selected" | cut -f2)"
+path="${path/#\~/$HOME}"
+
+[ -d "$path" ] || { echo "Folder not found: $path"; exit 1; }
+"$ZED" "$path"

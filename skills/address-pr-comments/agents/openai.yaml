@@ -1,0 +1,4 @@
+interface:
+  display_name: "Address PR Comments"
+  short_description: "Work through PR review comments one by one with approval"
+  default_prompt: "Use $address-pr-comments to go through the review comments on this PR."

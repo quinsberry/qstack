@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate Staged Commit"
+  short_description: "Write a terse Conventional Commits message for staged changes"
+  default_prompt: "Use $generate-staged-commit to write a commit message for the staged changes."

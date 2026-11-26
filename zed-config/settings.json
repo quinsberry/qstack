@@ -1,0 +1,140 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run `zed: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+    "edit_predictions": {
+        "provider": "copilot"
+    },
+    "cli_default_open_behavior": "new_window",
+    "base_keymap": "VSCode",
+
+    // installed automatically on a new machine
+    "auto_install_extensions": {
+        "vscode-icons": true,
+        "terraform": true,
+        "dockerfile": true,
+        "groovy": true,
+        "html": true,
+        "java": true,
+        "make": true,
+        "sql": true,
+    },
+
+    // theme / icons (workbench.colorTheme, workbench.iconTheme)
+    "theme": {
+        "mode": "dark",
+        "light": "Gruvbox Light Hard",
+        "dark": "Gruvbox Dark Hard (VS Code)",
+    },
+    "icon_theme": {
+        "mode": "dark",
+        "light": "VSCode Icons for Zed (Dark)",
+        "dark": "VSCode Icons for Zed (Dark)"
+    }, // needs "VSCode Icons" extension
+    // fonts: VS Code macOS defaults
+    "ui_font_family": ".SystemUIFont",
+    "ui_font_size": 14,
+    "buffer_font_family": "Menlo",
+    "buffer_font_size": 12,
+    "buffer_line_height": { "custom": 1.5 },
+
+    // editor
+    "tab_size": 4,
+    "hard_tabs": false,
+    "cursor_shape": "bar",
+    "cursor_blink": true,
+    "linked_edits": true,
+    "file_types": { "typescript": ["*.ts"] },
+
+    // VS Code has formatOnSave off by default. Zed has it on.
+    "format_on_save": "off",
+
+    // prettier.* (a project .prettierrc still wins)
+    "prettier": {
+        "tabWidth": 4,
+        "singleQuote": true,
+        "trailingComma": "all",
+        "semi": true,
+        "bracketSameLine": true,
+        "printWidth": 120,
+    },
+
+    // errorlens
+    "diagnostics": { "inline": { "enabled": true } },
+
+    // breadcrumbs (Zed shows path + symbols together, no separate switch)
+    "toolbar": { "breadcrumbs": true, "quick_actions": false },
+
+    // tabs like VS Code: file icon, git color, close button always visible, no back/forward arrows
+    "tab_bar": { "show_nav_history_buttons": false },
+    "tabs": {
+        "file_icons": true,
+        "git_status": true,
+        "close_position": "right",
+        "show_close_button": "always",
+    },
+
+    // Copilot inline suggestions, off for markdown/plaintext like your VS Code
+    "show_edit_predictions": true,
+    "languages": {
+        "Markdown": { "show_edit_predictions": false },
+        "Plain Text": { "show_edit_predictions": false },
+    },
+
+    // tailwindCSS.includeLanguages
+    "lsp": {
+        "tailwindcss-language-server": {
+            "settings": {
+                "includeLanguages": {
+                    "html": "html",
+                    "javascript": "javascript",
+                    "css": "css",
+                },
+            },
+        },
+    },
+
+    // files.watcherExclude. This replaces Zed's default list, so the defaults are repeated here.
+    // Unlike VS Code, it also hides these folders from the project panel.
+    "file_scan_exclusions": [
+        "**/.git",
+        "**/.svn",
+        "**/.hg",
+        "**/.jj",
+        "**/CVS",
+        "**/.DS_Store",
+        "**/Thumbs.db",
+        "**/.classpath",
+        "**/.settings",
+        "**/.bloop",
+        "**/.metals",
+        "**/.ammonite",
+    ],
+
+    // layout: file explorer on the left like VS Code, agent panel on the right
+    "project_panel": {
+        "folder_indicator": "icon",
+        "dock": "left",
+        "git_status": true,
+        "file_icons": true,
+    },
+    "agent": {
+        "threads_sidebar": {
+            "position": "right"
+        },
+        "favorite_models": [],
+        "model_parameters": [],
+    },
+    "agent_servers": { "claude-acp": { "type": "registry" } },
+    "terminal": {
+        "shell": "system",
+        "dock": "bottom",
+        "font_family": "Menlo",
+        "font_size": 12,
+    },
+}

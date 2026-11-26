@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Save a folder (default: current Zed project) to the projects file.
+# Saving a path that is already in the list updates its name and tag.
+# Usage: zp-save [path]
+set -euo pipefail
+
+FILE="${ZP_PROJECTS:-$HOME/.config/zed/projects.json}"
+command -v jq >/dev/null || { echo "jq not found. Install it: brew install jq"; exit 1; }
+
+root="${1:-$PWD}"
+root="$(cd "$root" && pwd)"
+
+[ -s "$FILE" ] || echo '[]' > "$FILE"
+
+current_name="$(jq -r --arg p "$root" 'map(select(.rootPath == $p)) | .[0].name // empty' "$FILE")"
+default_name="${current_name:-$(basename "$root")}"
+tags="$(jq -r '[.[].tags[]?] | unique | map(select(. != "without-category")) | join(", ")' "$FILE")"
+
+echo "Saving: $root"
+read -rp "Name [$default_name]: " name
+name="${name:-$default_name}"
+[ -n "$tags" ] && echo "Existing tags: $tags"
+read -rp "Tag (empty for none): " tag
+
+tmp="$(mktemp)"
+jq --arg n "$name" --arg p "$root" --arg t "$tag" '
+  map(select(.rootPath != $p))
+  + [{ name: $n, rootPath: $p, paths: [],
+       tags: (if $t == "" then [] else [$t] end),
+       enabled: true, profile: "" }]' "$FILE" > "$tmp"
+mv "$tmp" "$FILE"
+
+echo "Saved \"$name\" to $FILE"
