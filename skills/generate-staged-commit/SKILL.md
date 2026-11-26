@@ -1,22 +1,23 @@
 ---
 name: generate-staged-commit
 description: >
-    Write a Conventional Commits message for the currently staged changes.
-    Reads the staged diff and recent git log so the message matches the
-    repo's conventions, and outputs it ready to paste without committing.
-    Use whenever the user asks for a commit message, wants to know what to
-    call their staged changes, or says /generate-staged-commit, even if
-    they don't mention Conventional Commits.
+    Write a Conventional Commits message for the staged changes, matching
+    the repo's conventions from the staged diff and recent git log. Use
+    whenever the user asks to commit, asks for a commit message, wants to
+    know what to call their staged changes, or says /generate-staged-commit,
+    even if they don't mention Conventional Commits. If they asked to
+    commit, commit with that message; otherwise output it without committing.
 ---
 
 Write commit messages terse and exact. Conventional Commits format. No fluff. Why over what.
 
 ## Process
 
-1. Run `git diff --cached --stat`, then `git diff --cached`. Describe only what is staged — unstaged work is not part of this commit. If nothing is staged, say so and stop.
+1. Run `git diff --cached --stat`, then `git diff --cached`. Describe only what is staged — unstaged work is not part of this commit. If nothing is staged: when the user asked to commit, stage the files changed for the current task by path (never `git add -A` or `git add .`) and continue; otherwise say so and stop.
 2. Run `git log --oneline -20` to pick up the repo's conventions: scope naming, capitalization after the colon, emoji use. Follow them over the defaults below.
 3. If the staged changes are unrelated (e.g. a bug fix plus an unrelated refactor), say so and suggest splitting them before writing a single message.
 4. Take the _why_ from the conversation context. The diff shows what changed, not why — if the reason isn't known, omit the body rather than invent one.
+5. If the user asked to commit, run `git commit` with the message (pass multi-line messages via a heredoc or `-F`), then show the resulting `git log --oneline -1`. Otherwise output the message as a code block ready to paste.
 
 ## Rules
 
@@ -77,4 +78,4 @@ Always include body for: breaking changes, security fixes, data migrations, anyt
 
 ## Boundaries
 
-Only generates the commit message. Does not run `git commit`, does not stage files, does not amend. Output the message as a code block ready to paste.
+Runs `git commit` only when the user asked to commit; for "write a commit message" requests, outputs the message and stops. Stages files only in the commit case when nothing is staged. Never amends, pushes, or skips hooks (`--no-verify`) unless the user asks.

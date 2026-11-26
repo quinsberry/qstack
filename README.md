@@ -7,7 +7,7 @@ The agent skills and editor config I use. The skills work in Claude Code and Cod
 | Skill | What it does |
 |---|---|
 | [`address-pr-comments`](skills/address-pr-comments/SKILL.md) | Work through a PR's review comments one at a time, locally, and post replies only after approval |
-| [`generate-staged-commit`](skills/generate-staged-commit/SKILL.md) | Write a Conventional Commits message for the staged changes, without committing |
+| [`generate-staged-commit`](skills/generate-staged-commit/SKILL.md) | Write a Conventional Commits message for the staged changes, and commit with it when asked to commit |
 | [`review-candidate`](skills/review-candidate/SKILL.md) | Turn a technical interview transcript (`.docx` or `.md`) into a hire/no-hire recommendation |
 | [`review-pr`](skills/review-pr/SKILL.md) | Review a GitHub PR, draft terse inline comments, and post them only after approval. Manual only in Claude Code (`/review-pr`) |
 | [`work-history`](skills/work-history/SKILL.md) | Export and sanitize your work history into an inventory and a seniority analysis |
