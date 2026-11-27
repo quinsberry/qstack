@@ -16,12 +16,18 @@ Speed matters: run independent commands in parallel and fetch each thing once. N
 Read the mode from the arguments:
 
 - **Full** (default), `/review-pr <pr>`: steps 1–7. Review, show the gate, and post once the user approves.
-- **Drafts only**, `/review-pr <pr> drafts-only [out=<path>]`: steps 1–5, then write the [drafts file](#drafts-file) to `out` (default: a new file in the system temp dir), print its path, and stop. Never ask a question and never post. On a problem that would need a question (no PR found, bad ref), stop and say why. This mode is for a caller that runs the review in another agent or model and keeps the gate for itself.
+- **Drafts only**, `/review-pr <pr> drafts-only [out=<path>]`: steps 1–5, then write the [drafts file](#drafts-file) to `out` (default: a new file in the system temp dir), print the `reviewed by` line and then its path, and stop. Never ask a question and never post. On a problem that would need a question (no PR found, bad ref), stop and say why. This mode is for a caller that runs the review in another agent or model and keeps the gate for itself.
 - **Post**, `/review-pr post <drafts file>`: skip the review and run step 7 for the drafts marked `"approved": true` in the file. The caller owns the approval. If the PR's head has moved past the file's `sha`, say so before posting. The comments still land on the reviewed commit.
 
 ## Reviewer
 
-Optional in any mode: `reviewer-provider=<name>`, `reviewer-model=<name>` and `reviewer-effort=<level>`. Pass the ones given to `review-changes`, which owns the defaults and runs the review on that model. If it reports that the reviewer couldn't be reached, stop and tell the user. Never fall back to another model without asking.
+Who does the code review, in any mode. The defaults apply to everyone; edit them here to change them.
+
+- `reviewer-provider=<name>`: default `codex`. `self` means you do the review, whatever the other two say.
+- `reviewer-model=<name>`: default `gpt-6.2-sol`.
+- `reviewer-effort=<level>`: default `high`.
+
+Each value comes from, in order: an argument to this run; the project's `AGENTS.md` or `CLAUDE.md`, if it sets `review-pr.reviewer-provider`, `review-pr.reviewer-model` or `review-pr.reviewer-effort`; the defaults above. Always pass all three to `review-changes`, which runs the review on that reviewer. If it reports that the reviewer couldn't be reached, stop and tell the user. Never fall back to another model without asking.
 
 ## Process
 
@@ -53,7 +59,7 @@ Run the `review-changes` skill with:
 diff=<diff file> dir=<clone> at=<SHA> intent="<Intent>" out=<findings.json in the temp dir>
 ```
 
-Add any [reviewer](#reviewer) arguments that were given. Show the `reviewer` from `findings.json` at the gate, and copy it into the drafts file.
+Add the three [reviewer](#reviewer) arguments. Show the `reviewer` from `findings.json` at the top of the gate, and copy it into the drafts file.
 
 The review is **blind**: don't look at the existing PR comments until step 5, so the findings stay independent.
 
@@ -92,7 +98,7 @@ A partial overlap counts as a match: the same problem with a different fix, a di
 
 In drafts-only mode, write the [drafts file](#drafts-file) instead and stop here.
 
-Open with `What this change does:` from the review.
+Open with `reviewed by <reviewer>` as the first line, using the `reviewer` from `findings.json` (for example `reviewed by codex/gpt-6.2-sol (high)`). Then `What this change does:` from the review.
 
 Then present every `new` draft as a numbered list grouped by file, in the [comment format](#comment-format). List summary drafts last, under **Review body**. Post **nothing** yet.
 
@@ -120,7 +126,7 @@ EOF
 
 In post mode, the approved drafts come from the file: `new` ones go into the review, and approved `omitted` ones are posted as replies to `reply_to`. If `reply_to` is null, they become new threads.
 
-Report the number of comments posted, the review URL, and each reply URL. Delete the temp clone and temp files if you made them.
+Start the report with the `reviewed by` line from the drafts file's `reviewer`. Then report the number of comments posted, the review URL, and each reply URL. Delete the temp clone and temp files if you made them.
 
 ## Drafts file
 

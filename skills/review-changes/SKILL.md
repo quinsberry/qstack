@@ -88,7 +88,7 @@ Collect all findings. When two groups report the same root cause, keep one findi
 Reply in very simple English: short sentences and everyday words. The reader may never have seen this code.
 
 ```
-Reviewed by: <provider>/<model> (<effort>)
+reviewed by <reviewer-provider>/<reviewer-model> (<reviewer-effort>)
 What this change does: <two sentences>
 
 1. src/auth.ts:42 bug: user can be null after .find(). Add a guard before .email.
@@ -99,7 +99,9 @@ Verdict: fix 1 and 3 first.        (or: Verdict: Ship.)
 Not checked: <one line, only if something mattered and you couldn't check it>
 ```
 
-With no findings: `Reviewed by:` and `What this change does:`, then `Looks good. Ship.` and one line on what you checked.
+The `reviewed by` line is always the first line, with the provider, model and effort that actually did the review (with `self`, your own provider and model, never the word `self`).
+
+With no findings: the `reviewed by` line and `What this change does:`, then `Looks good. Ship.` and one line on what you checked.
 
 If `out` was given, also write the [JSON result](#json-result) there and print its path.
 
