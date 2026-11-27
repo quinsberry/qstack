@@ -1,97 +1,153 @@
 ---
 name: review-pr
-description: Review a GitHub PR, draft terse threaded comments, and post them only after you approve.
-disable-model-invocation: true
+description: Review a GitHub PR, draft terse inline comments, and post them only after the user approves. The code review itself is done by the review-changes skill; this skill adds the GitHub side (fetching the PR, anchoring to diff lines, skipping problems other reviewers already raised, posting). Use for /review-pr <pr>, "review this PR", "leave review comments on #123".
 ---
 
-Review a GitHub PR along two axes, draft one terse comment per finding, show every draft, and post them as inline threads **only after explicit approval**.
+Review a GitHub PR: draft one terse comment per finding, show every draft, and post them as inline threads **only after explicit approval**.
 
-The **gate** is the spine: nothing reaches the PR until you approve the full set. Every step before it produces drafts; only the last step writes to GitHub.
+The **gate** is the spine: nothing reaches the PR until the user approves the full set. Every step before it produces drafts; only step 7 writes to GitHub.
 
-Use `gh` for all GitHub reads and writes. Review runs off the fetched diff — never clone the repo for a local copy. If a local clone of this repo already exists and you want its files for context, ask first, then switch it to the PR branch only on approval. Never delete a repo.
+The code review itself is done by the **`review-changes`** skill, from this same repo. If it isn't installed, stop and say so.
+
+Speed matters: run independent commands in parallel and fetch each thing once. Nothing here depends on a particular agent, model or harness.
+
+## Modes
+
+Read the mode from the arguments:
+
+- **Full** (default), `/review-pr <pr>`: steps 1–7. Review, show the gate, and post once the user approves.
+- **Drafts only**, `/review-pr <pr> drafts-only [out=<path>]`: steps 1–5, then write the [drafts file](#drafts-file) to `out` (default: a new file in the system temp dir), print its path, and stop. Never ask a question and never post. On a problem that would need a question (no PR found, bad ref), stop and say why. This mode is for a caller that runs the review in another agent or model and keeps the gate for itself.
+- **Post**, `/review-pr post <drafts file>`: skip the review and run step 7 for the drafts marked `"approved": true` in the file. The caller owns the approval. If the PR's head has moved past the file's `sha`, say so before posting. The comments still land on the reviewed commit.
+
+## Reviewer
+
+Optional in any mode: `reviewer-provider=<name>`, `reviewer-model=<name>` and `reviewer-effort=<level>`. Pass the ones given to `review-changes`, which owns the defaults and runs the review on that model. If it reports that the reviewer couldn't be reached, stop and tell the user. Never fall back to another model without asking.
 
 ## Process
 
 ### 1. Pin the PR
 
-Take the PR the user names (URL, `owner/repo#123`, or a number in the current repo). Fetch its diff, commits, and description:
+Take the PR the user names (URL, `owner/repo#123`, or a number in the current repo). With none named, use the current branch's PR (`gh pr view`); with none there either, ask.
 
-- `gh pr diff <ref>` — the diff to review.
-- `gh pr view <ref> --json title,body,commits,headRefName,url,author`.
+In parallel:
 
-Also fetch every existing comment, for [step 4.5](#45-dedupe-against-existing-comments) only:
+- `gh pr view <ref> --json number,title,body,url,author,headRefOid,baseRefName,headRefName,files,closingIssuesReferences`
+- `gh pr diff <ref>`, saved to a file in the system temp dir. If it fails because the diff is too big, build the file from `gh api repos/{owner}/{repo}/pulls/{n}/files --paginate`, which returns a `patch` for each file.
 
-- **Inline threads** — `gh api graphql` on `pullRequest.reviewThreads` for `isResolved`, `isOutdated`, `path`, `line`, and each comment's `databaseId`, `author`, `body`, `url`. REST doesn't expose resolved state.
-- **Review bodies** — `gh api repos/{owner}/{repo}/pulls/{n}/reviews --paginate`.
-- **Conversation comments** — `gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`.
+Pin `headRefOid` as **SHA**. Every read and the final post use it, so a push mid-review can't shift line numbers. Fail here on a bad ref or an empty diff.
 
-Drop comments by the PR author. Their replies are not findings. Keep everyone else's, including bots and your own earlier comments.
+### 2. Get the code
 
-Confirm the diff is non-empty before going further. Empty diff or bad ref fails here.
+Reviewing the diff alone misses most real bugs, so the review needs the code at SHA. Pick the fastest source:
 
-### 2. Find the spec source
+- **Local clone.** If the current folder is a clone of the PR's repo, run `git fetch <remote> pull/<n>/head`, where `<remote>` points at the base repo, and confirm `FETCH_HEAD` equals SHA. Don't check anything out; the user's working tree stays untouched.
+- **Temp clone.** Otherwise, `gh repo clone {owner}/{repo} <tmp> -- --depth=1 -q`, then `git -C <tmp> fetch --depth=1 origin pull/<n>/head`. Put `<tmp>` in the system temp dir, and delete it when the run ends: after step 7, after writing the drafts file, or when the user aborts. Delete nothing else.
 
-Locate what the PR was supposed to implement, in order:
+Write **Intent** in one or two sentences, from the PR title, the body and any linked issue (`gh issue view` if the body is thin).
 
-1. Issue references in the PR title, body or commits (`XXX-0000`, `Closes #45`) — fetch via `gh issue view`.
-2. A path the user passed.
-3. A PRD/spec file under `docs/`, `specs/`, or matching the branch name. (optionally)
+### 3. Review
 
-If nothing turns up, ask. If the user says there's no spec, skip the Spec axis and note it.
+Run the `review-changes` skill with:
 
-### 3. Review along two axes
+```
+diff=<diff file> dir=<clone> at=<SHA> intent="<Intent>" out=<findings.json in the temp dir>
+```
 
-Review blind: don't read the existing comments here, so your findings stay independent of what others raised.
+Add any [reviewer](#reviewer) arguments that were given. Show the `reviewer` from `findings.json` at the gate, and copy it into the drafts file.
 
-Examine **every changed hunk** against both:
+The review is **blind**: don't look at the existing PR comments until step 5, so the findings stay independent.
 
-- **Standards** — repo standards (`CONTRIBUTING.md`, `CODING_STANDARDS.md`, lint config) plus the [smell baseline](#smell-baseline). Skip anything tooling already enforces. A documented repo standard overrides the baseline.
-- **Spec** — does the diff implement what the spec/issue asked? Flag: (a) missing/partial requirements, (b) scope creep, (c) requirements implemented wrong.
+### 4. Draft and anchor
 
-**Completion criterion:** every changed file accounted for against both axes — not a sampled subset.
+Turn each finding in `findings.json` into one draft in the [comment format](#comment-format): `path:line: <severity> <problem>. <fix>.`
 
-### 4. Draft comments
+GitHub only accepts an inline comment on a line inside the diff, and one bad line fails the whole review. So check every anchor against the diff:
+- an added or context line → its new-file line number, `side: RIGHT`;
+- a deleted line → its old-file line number, `side: LEFT`;
+- a line outside every hunk → move it to the nearest hunk line in that file showing the same problem. If there isn't one (for example, a caller in an unchanged file breaks), or the finding has no path, it becomes a **summary** draft for the review body.
 
-Turn each finding into one draft comment in the [terse format](#comment-format), anchored to `path` + `line`. Keep the axis in mind but write the comment plainly — the author doesn't care which pass found it.
+**Completion criterion:** every finding has exactly one draft, either inline on a line that's in the diff, or a summary.
 
-**Completion criterion:** every finding from step 3 has exactly one draft comment with a real file and line.
+### 5. Dedupe against existing comments
 
-### 4.5. Dedupe against existing comments
+Now fetch the existing comments, in parallel:
 
-Match each draft against the comments fetched in step 1. A draft matches when it raises the **same problem** as an existing comment:
+- **Inline threads:** `gh api graphql` on `pullRequest.reviewThreads(first:100)` for `path`, `line`, `originalLine` (outdated threads have no `line`), and each comment's `databaseId`, `author`, `body`, `url`. This includes resolved and outdated threads.
+- **Review bodies:** `gh api repos/{owner}/{repo}/pulls/{n}/reviews --paginate`.
+- **Conversation comments:** `gh api repos/{owner}/{repo}/issues/{n}/comments --paginate`.
 
-- **Inline thread** — same `path`, line within ±3, same problem (your judgement).
-- **Review body / conversation comment** — same problem, by content alone.
+Drop comments by the PR author; their replies aren't findings. Keep everyone else's, including bots and your own earlier comments.
 
-Thread state:
-- **Resolved** — a match suppresses the draft. Someone already decided on it.
-- **Outdated** — a match suppresses the draft only if the flagged code still has the same problem in the current diff. Otherwise keep the draft as new.
+A draft matches when it raises the **same problem** as an existing comment:
+- **Inline thread:** same `path`, line within ±3, and the same problem (your judgement).
+- **Review body or conversation comment:** the same problem, judged by content alone.
 
-Partial overlap (same problem, different fix) counts as a match. Exception: if your severity is higher (theirs `nit:`, yours `bug:`), keep the draft as a **reply** to their inline thread, or as a new thread if the match was a review body or conversation comment.
+A match suppresses the draft whatever the thread's state: open, resolved (someone already decided on it), or outdated (the author was told and still left the problem in).
 
-**Completion criterion:** every draft is marked `new`, `reply → <comment url>`, or `omitted → <comment url>`.
+A partial overlap counts as a match: the same problem with a different fix, a different severity, or different wording. A problem someone already raised never gets a new comment or an automatic reply. The author has seen it once, and a second comment is noise. Only the user can bring a matched draft back, at the gate.
 
-### 5. Gate — show all, get approval
+**Completion criterion:** every draft is marked `new` or `omitted → <comment url>`.
 
-Present every `new` and `reply` draft as a numbered list grouped by file, each showing `path:line`, severity, and body. Mark replies with the thread they answer. Post **nothing** yet.
+### 6. Gate: show all, get approval
 
-Below it, show the omitted drafts as a separate list numbered `O1`, `O2`…, each with its draft and a link to the existing comment it matched. If every draft was omitted, say **No new findings.** above the list.
+In drafts-only mode, write the [drafts file](#drafts-file) instead and stop here.
 
-Then ask the user to approve, edit, or drop each comment or the whole set, and to `un-omit On` any omitted draft. An un-omitted draft becomes a reply on its matched inline thread, or a new thread if it matched a review body or conversation comment. Wait for an explicit reply. Revise and re-show if they edit. Do not advance to step 6 until they approve.
+Open with `What this change does:` from the review.
 
-### 6. Post as threads
+Then present every `new` draft as a numbered list grouped by file, in the [comment format](#comment-format). List summary drafts last, under **Review body**. Post **nothing** yet.
 
-Post only the approved comments as **inline review threads** so each lands on its diff line:
+Below that, list the omitted drafts as `O1`, `O2`…, each with its draft and a link to the comment it matched. If every draft was omitted, say **No new findings.** above the list. If there were no findings at all, say `Looks good.` and add the review's line on what it checked.
 
-1. Create a pending review on the PR.
-2. Add each approved comment to its `path` + `line`.
-3. Submit the review as `COMMENT` (not approve/request-changes unless the user says so).
+End with the review's `Not checked:` line, if it has one.
 
-`gh api` route: `POST /repos/{owner}/{repo}/pulls/{n}/reviews` with a `comments` array (`path`, `line`, `body`, `side`).
+Ask the user to approve, edit, or drop each comment or the whole set, and to `un-omit On` any omitted draft. An un-omitted draft becomes a reply on its matched inline thread, or a new thread if it matched a review body or a conversation comment. A reply targets the thread's **first** comment (its `databaseId`), because GitHub can't reply to a reply. Wait for an explicit reply. If they edit, revise and show the list again. Don't go on to step 7 until they approve.
 
-Then post each approved reply on its own: `POST /repos/{owner}/{repo}/pulls/{n}/comments/{comment_id}/replies` with `body`. Replies can't join the review batch.
+### 7. Post as threads
 
-Skip the review if no new threads were approved, so you never submit an empty review. If nothing at all was approved, post nothing. Report the posted count, the review URL, and each reply URL.
+Post only what was approved, as **one review**:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{n}/reviews --method POST --input - <<'EOF'
+{"commit_id": "<SHA>", "event": "COMMENT", "body": "<approved summary drafts, or empty>",
+ "comments": [{"path": "src/a.ts", "line": 42, "side": "RIGHT", "body": "bug: ..."}]}
+EOF
+```
+
+- Each comment `body` drops the `path:line:` prefix, since the thread already sits on that line.
+- Submit as `COMMENT`. Use approve or request-changes only if the user says so.
+- Then post each un-omitted reply on its own, since replies can't join the review: `POST repos/{owner}/{repo}/pulls/{n}/comments/{first_comment_id}/replies` with `body`.
+- Skip the review if it would have no comments and no body. If nothing was approved, post nothing.
+
+In post mode, the approved drafts come from the file: `new` ones go into the review, and approved `omitted` ones are posted as replies to `reply_to`. If `reply_to` is null, they become new threads.
+
+Report the number of comments posted, the review URL, and each reply URL. Delete the temp clone and temp files if you made them.
+
+## Drafts file
+
+The hand-off between drafts-only and post mode. It's JSON, so any caller can read it, show it, edit `body`, and set `approved`:
+
+```json
+{
+  "pr": "https://github.com/owner/repo/pull/123",
+  "sha": "<SHA>",
+  "reviewer": "codex/gpt-6.2-sol (high)",
+  "what_this_change_does": "Two sentences.",
+  "not_checked": "One line, or null.",
+  "drafts": [
+    {"id": 1, "status": "new", "path": "src/auth.ts", "line": 42, "side": "RIGHT",
+     "severity": "bug", "case": "unknown email → crash on .email",
+     "body": "auth.ts:42: bug: user can be null after .find(). Add guard before .email.",
+     "approved": false},
+    {"id": 2, "status": "new", "path": null, "line": null, "side": null,
+     "severity": "bug", "case": "...", "body": "Review-body finding.", "approved": false},
+    {"id": "O1", "status": "omitted", "path": "src/db.ts", "line": 10, "side": "RIGHT",
+     "severity": "risk", "case": "...", "body": "...",
+     "matched_url": "<existing comment url>", "reply_to": 123456789, "approved": false}
+  ]
+}
+```
+
+A draft with `path: null` is a summary draft for the review body. `reply_to` is the `databaseId` of the matched thread's first comment, or null when the match was a review body or a conversation comment. Every draft starts with `"approved": false`.
 
 ## Comment format
 
@@ -100,30 +156,13 @@ One line per finding. Location, problem, fix. No throat-clearing, no restating w
 `path:line: <severity> <problem>. <fix>.`
 
 Severity prefix:
-- `bug:` — broken behavior, will cause an incident
-- `risk:` — works but fragile (race, missing null check, swallowed error)
-- `nit:` — style, naming, micro-optimization; author can ignore
-- `q:` — genuine question, not a suggestion
+- `bug:` broken behavior that will cause an incident
+- `risk:` works but is fragile (race, missing null check, swallowed error)
+- `nit:` style, naming, micro-optimization; the author can ignore it
+- `q:` a genuine question, not a suggestion
 
 Keep exact line numbers, symbol names in backticks, a concrete fix, and the *why* when the fix isn't obvious. If unsure whether something is wrong, make it a `q:`.
 
 Example: `auth.ts:42: bug: user can be null after .find(). Add guard before .email.`
 
-**Auto-clarity:** for security findings (CVE-class) and architectural disagreements, drop terse mode — write a full paragraph with rationale, then resume terse for the rest.
-
-## Smell baseline
-
-A fixed set of Fowler code smells that applies even when the repo documents nothing. Each is a judgement call ("possible Feature Envy"), never a hard violation. Reads *what it is* → *how to fix*:
-
-- **Mysterious Name** — a name that doesn't reveal what it does or holds. → rename; if no honest name comes, the design's murky.
-- **Duplicated Code** — the same logic shape in more than one hunk. → extract, call from both.
-- **Feature Envy** — a method reaching into another object's data more than its own. → move it onto the data it envies.
-- **Data Clumps** — the same fields travelling together. → bundle into one type.
-- **Primitive Obsession** — a primitive standing in for a domain concept. → give the concept its own type.
-- **Repeated Switches** — the same switch on the same type recurring. → polymorphism, or one shared map.
-- **Shotgun Surgery** — one change forcing scattered edits. → gather what changes together.
-- **Divergent Change** — one module edited for several unrelated reasons. → split by reason.
-- **Speculative Generality** — abstraction added for needs the spec doesn't have. → delete, inline back.
-- **Message Chains** — long `a.b().c().d()` the caller shouldn't depend on. → hide behind one method.
-- **Middle Man** — a class that mostly just delegates. → cut it, call the real target.
-- **Refused Bequest** — a subclass ignoring most of what it inherits. → use composition.
+**Auto-clarity:** for security findings (CVE-class) and architectural disagreements, drop terse mode. Write a full paragraph with the rationale, then go back to terse for the rest.

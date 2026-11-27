@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Changes"
+  short_description: "Review a diff for bugs, risks, scale, missing tests and dead weight"
+  default_prompt: "Use $review-changes to review my uncommitted changes."
